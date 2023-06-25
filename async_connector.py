@@ -7,7 +7,7 @@ import asyncio
 
 
 class Connector():
-    def __init__(self, logfile, overwrite_log=False, n_tries=10, timeout=30):
+    def __init__(self, logfile: str, overwrite_log=False, n_tries=10, timeout=30):
         """
         This class implements a method for reliable connection to the internet
         and monitoring. It handles simple errors due to connection problems,
@@ -33,7 +33,7 @@ class Connector():
         self.logfilename = logfile
 
         header = [
-            'id',
+            'call_id',
             'project',
             't',
             'delta_t',
@@ -63,22 +63,23 @@ class Connector():
         with open(logfile, 'r') as f:
             lines = f.readlines()
             if len(lines) <= 1:
-                self.id = 0
+                self.call_id = 0
             else:
                 # Assume id is the first entry in the last line and is an integer
                 last_line = lines[-1]
                 last_id = last_line.split(';')[0]
                 try:
-                    self.id = int(last_id) + 1
+                    self.call_id = int(last_id) + 1
                 except ValueError:
-                    self.id = 0
+                    self.call_id = 0
 
-    async def rate_limit(delay):
+    @staticmethod
+    async def rate_limit(delay: float):
         """
         Asynchronously waits for a specified number of seconds. Can be used for rate limiting.
         
         :param delay: The number of seconds to wait.
-        :type delay: int or float
+        :type delay: float
         """
         await asyncio.sleep(delay)
 
@@ -113,10 +114,10 @@ class Connector():
                     dt = t_end - t_start
                     size = len(json.dumps(r))
                     response_code = response.status
-                    call_id = self.id
-                    self.id += 1
+                    current_call_id = self.call_id
+                    self.call_id += 1
                     row = [
-                        call_id,
+                        current_call_id,
                         project_name,
                         t_start,
                         dt,
@@ -129,26 +130,36 @@ class Connector():
                     ]
 
                     if response_code >= 500:
-                        await rate_limit(self.timeout * n ** 2)
+                        await Connector.rate_limit(self.timeout)
                         continue  # Retry in case of server error
 
-                    self.log.write('\n' + ';'.join(map(str, row)))
-                    self.log.flush()
+                self.log.write('\n' + ';'.join(map(str, row)))
+                self.log.flush()
 
-                    return r, response_code, call_id
+                return r
+
+            except aiohttp.ClientConnectionError:
+                error = "Connection error"
+                success = False
+
+            except asyncio.TimeoutError:
+                error = "Timeout error"
+                success = False
 
             except Exception as e:
-                t_end = time.time()
                 error = traceback.format_exc()
                 success = False
+
+            finally:
+                t_end = time.time()
                 redirect_url = ''
                 dt = t_end - t_start
                 size = 0
                 response_code = ''
-                call_id = self.id
-                self.id += 1
+                current_call_id = self.call_id
+                self.call_id += 1
                 row = [
-                    call_id,
+                    current_call_id,
                     project_name,
                     t_start,
                     dt,
@@ -162,7 +173,7 @@ class Connector():
                 self.log.write('\n' + ';'.join(map(str, row)))
                 self.log.flush()
 
-                await rate_limit(self.timeout * n ** 2)  # Assume rate_limit is asynchronous
+                await Connector.rate_limit(self.timeout)
 
     def __del__(self):
         """
@@ -170,5 +181,3 @@ class Connector():
         """
         if hasattr(self, 'log') and not self.log.closed:
             self.log.close()
-    
-
