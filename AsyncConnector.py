@@ -6,27 +6,28 @@ import aiohttp
 import asyncio
 
 
-class Connector():
+class AsyncConnector():
+    """
+    This class implements a method for reliable connection to the internet
+    and monitoring. It handles simple errors due to connection problems,
+    and logs a range of information for basic quality assessments.
+
+    :param logfile: path to log file
+    :type logfile: str
+
+    :param overwrite_log: define if logfile should be cleared
+    :type overwrite_log: bool
+
+    :param n_tries: defines the number of retries the *get* method will
+    have in order to avoid connection errors.
+    :type n_tries: int
+
+    :param timeout: seconds the get request will wait for the server to
+    respond in order to avoid connection errors.
+    :type timeout: int
+    """
+
     def __init__(self, logfile: str, overwrite_log=False, n_tries=10, timeout=30):
-        """
-        This class implements a method for reliable connection to the internet
-        and monitoring. It handles simple errors due to connection problems,
-        and logs a range of information for basic quality assessments.
-
-        :param logfile: path to log file
-        :type logfile: str
-
-        :param overwrite_log: define if logfile should be cleared
-        :type overwrite_log: bool
-
-        :param n_tries: defines the number of retries the *get* method will
-        have in order to avoid connection errors.
-        :type n_tries: int
-
-        :param timeout: seconds the get request will wait for the server to
-        respond in order to avoid connection errors.
-        :type timeout: int
-        """
 
         self.n_tries = n_tries
         self.timeout = timeout
@@ -85,7 +86,7 @@ class Connector():
 
     async def get(self, session: aiohttp.ClientSession, url: str, project_name: str):
         """
-        Method for connector to send asynchronous GET requests reliably to the
+        Method for Asyncconnector to send asynchronous GET requests reliably to the
         internet, with multiple tries and simple error handling, as well as a
         simple logging function.
 
@@ -102,20 +103,30 @@ class Connector():
         :rtype: dict
         """
 
-        for n in range(self.n_tries):
+        for _ in range(self.n_tries):
             t_start = time.time()
             try:
                 async with session.get(url, timeout=self.timeout) as response:
                     t_end = time.time()
-                    r = await response.json()
+                    #r = await response.json()
                     error = ''
                     success = True
                     redirect_url = str(response.url)
                     dt = t_end - t_start
-                    size = len(json.dumps(r))
+                    #size = len(json.dumpr(r))
                     response_code = response.status
                     current_call_id = self.call_id
                     self.call_id += 1
+
+                    content_type = response.headers.get('Content-Type')
+                    if 'json' in content_type:
+                        r = await response.json()
+                        size = len(json.dumps(r))
+                    else:
+                        # Handle non-JSON response
+                        r = await response.text()
+                        size = len(r)
+
                     row = [
                         current_call_id,
                         project_name,
@@ -130,7 +141,7 @@ class Connector():
                     ]
 
                     if response_code >= 500:
-                        await Connector.rate_limit(self.timeout)
+                        await AsyncConnector.rate_limit(self.timeout)
                         continue  # Retry in case of server error
 
                 self.log.write('\n' + ';'.join(map(str, row)))
@@ -173,7 +184,7 @@ class Connector():
                 self.log.write('\n' + ';'.join(map(str, row)))
                 self.log.flush()
 
-                await Connector.rate_limit(self.timeout)
+                await AsyncConnector.rate_limit(self.timeout)
 
     def __del__(self):
         """
